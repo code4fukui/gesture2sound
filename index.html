@@ -1,325 +1,360 @@
-<!doctype html>
-<html lang="ja">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>Log XY Synth (Pressure: Sine→Square)</title>
+<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><link rel="icon" href="data:">
+  <title>gesture2sound</title>
   <style>
-    :root { color-scheme: light dark; }
-    html, body { height: 100%; margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    html, body {
+      height: 100%; margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      color: white;
+    }
     #pad {
       height: 100%;
-      touch-action: none; /* important for pointer events */
-      display: grid;
-      place-items: center;
+      touch-action: none;           /* ← 重要: ブラウザのスクロール/ズーム抑止 */
       user-select: none;
       -webkit-user-select: none;
+      background: radial-gradient(1200px 800px at 50% 20%, #1a2330 0%, #0b0f14 55%, #070a0d 100%);
+      color: #e7eef7;
+      position: relative;
+      overflow: hidden;
     }
     .hud {
       position: fixed; left: 12px; top: 12px;
-      padding: 10px 12px; border-radius: 12px;
-      background: color-mix(in srgb, canvas 80%, transparent);
-      border: 1px solid color-mix(in srgb, canvastext 15%, transparent);
-      backdrop-filter: blur(8px);
-      min-width: 240px;
+      padding: 10px 12px; border-radius: 14px;
+      background: rgba(10,16,22,0.72);
+      border: 1px solid rgba(255,255,255,0.12);
+      backdrop-filter: blur(10px);
+      min-width: 280px;
+      font-variant-numeric: tabular-nums;
     }
     .row { display: flex; gap: 10px; align-items: center; margin: 6px 0; }
-    .row label { width: 88px; opacity: 0.85; font-size: 12px; }
+    .row b { width: 90px; font-size: 12px; opacity: .85; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
-    input[type="range"] { width: 140px; }
-    .hint {
-      position: fixed; right: 12px; bottom: 12px;
+    button {
       padding: 10px 12px; border-radius: 12px;
-      background: color-mix(in srgb, canvas 80%, transparent);
-      border: 1px solid color-mix(in srgb, canvastext 15%, transparent);
-      backdrop-filter: blur(8px);
-      max-width: 320px;
-      font-size: 12px;
-      line-height: 1.35;
+      border: 1px solid rgba(255,255,255,0.16);
+      background: rgba(255,255,255,0.06);
+      color: #e7eef7; font-weight: 700;
+    }
+    .note {
+      position: absolute;
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      box-shadow: 0 0 0 2px rgba(255,255,255,0.10), 0 8px 26px rgba(0,0,0,0.35);
+    }
+    .anchor {
+      width: 10px; height: 10px;
+      box-shadow: 0 0 0 2px rgba(140,200,255,0.25);
       opacity: .9;
     }
-    .center {
-      text-align: center;
-      padding: 18px 22px;
-      border-radius: 16px;
-      border: 1px dashed color-mix(in srgb, canvastext 25%, transparent);
-      background: color-mix(in srgb, canvas 85%, transparent);
+    .hint {
+      position: fixed; right: 12px; bottom: 12px;
+      padding: 10px 12px; border-radius: 14px;
+      background: rgba(10,16,22,0.72);
+      border: 1px solid rgba(255,255,255,0.12);
+      backdrop-filter: blur(10px);
+      max-width: 360px;
+      font-size: 12px; line-height: 1.4;
+      opacity: .9;
     }
-    button {
-      padding: 10px 14px; border-radius: 12px;
-      border: 1px solid color-mix(in srgb, canvastext 20%, transparent);
-      background: color-mix(in srgb, canvas 92%, transparent);
-      font-weight: 600;
+    .hint a {
+      color: gray !important;
     }
   </style>
 </head>
-
 <body>
-  <div id="pad">
-    <div class="center">
-      <div style="font-weight:700;margin-bottom:10px;">Tap / Press to Play</div>
-      <button id="btnStart">Start Audio</button>
-      <div style="opacity:.75;font-size:12px;margin-top:10px;">
-        押した地点からの相対移動で「周波数・音量」を対数変化<br/>
-        圧力(ペン)で「正弦波→矩形波」を段階的に変化
-      </div>
-    </div>
-  </div>
+  <div id="pad"></div>
 
   <div class="hud">
-    <div class="row"><label>state</label><span class="mono" id="state">stopped</span></div>
-    <div class="row"><label>pointer</label><span class="mono" id="ptype">-</span></div>
-    <div class="row"><label>freq</label><span class="mono" id="freq">-</span></div>
-    <div class="row"><label>gain</label><span class="mono" id="gain">-</span></div>
-    <div class="row"><label>pressure</label><span class="mono" id="press">-</span></div>
-    <div class="row"><label>wave step</label><span class="mono" id="step">-</span></div>
-
-    <div class="row" id="simRow" style="display:none;">
-      <label>simulate</label>
-      <input id="simPressure" type="range" min="0" max="1" step="0.01" value="0.25" />
-      <span class="mono" id="simVal">0.25</span>
+    <h1>gesture2sound</h1>
+    <div class="row">
+      <button id="start">Audio ON</button>
+      <span class="mono" id="state">stopped</span>
     </div>
+    <!--
+    <div class="row"><b>pointers</b><span class="mono" id="count">0</span></div>
+    <div class="row"><b>last</b><span class="mono" id="last">-</span></div>
+    <div class="row"><b>mapping</b><span class="mono">dx→freq(log), dy→gain(dB), pressure→timbre(step)</span></div>
+    -->
   </div>
 
   <div class="hint">
-    <b>使い方</b><br/>
-    1) Start Audio → 画面を押すと発音。<br/>
-    2) 押し始めた点からの相対移動：<br/>
-    ・左右：周波数 (対数) / ・上下：音量 (対数dB)<br/>
-    3) 圧力：正弦→矩形へ段階変化（ペン入力が理想）。<br/>
-    ※ iPhone指は圧力が取れないのでスライダーで代用します。
+    <b>操作</b><br>
+    ・押した点がアンカー。そこからの相対移動で鳴ります（マルチポインタ / 和音OK）。<br>
+    ・左右(dx): 周波数（対数 / オクターブ）<br>
+    ・上下(dy): 音量（対数 / dB）<br>
+    <!--※ iOSは最初に Audio O N を押してください。<br>-->
+    <a href=https://github.com/code4fukui/gesture2sound/>src on GitHub</a>
   </div>
 
 <script>
 (() => {
-  // ===== UI =====
-  const $ = (id) => document.getElementById(id);
-  const elState = $("state");
-  const elPType = $("ptype");
-  const elFreq  = $("freq");
-  const elGain  = $("gain");
-  const elPress = $("press");
-  const elStep  = $("step");
-  const simRow  = $("simRow");
-  const simPressure = $("simPressure");
-  const simVal  = $("simVal");
-  const btnStart = $("btnStart");
-  const pad = $("pad");
+  const pad = document.getElementById("pad");
+  const btnStart = document.getElementById("start");
+  const elState = document.getElementById("state");
+  const elCount = document.getElementById("count");
+  const elLast  = document.getElementById("last");
 
-  simPressure.addEventListener("input", () => {
-    simVal.textContent = Number(simPressure.value).toFixed(2);
-  });
-
-  // ===== Audio =====
-  /** @type {AudioContext | null} */
+  // ===== Audio Graph =====
+  /** @type {AudioContext|null} */
   let ac = null;
   let master = null;
-  let osc = null;
-
-  // press start reference
-  let isDown = false;
-  let startX = 0, startY = 0;
-  let pointerType = "unknown";
-
-  // params
-  const BASE_FREQ = 220;      // A3
-  const FREQ_OCT  = 4.0;      // 左右移動で ±4oct 相当
-  const GAIN_DB_RANGE = 48;   // 上下移動で ±48dB 相当
-  const MAX_DX_PX = 240;      // これ以上動いても飽和させる
-  const MAX_DY_PX = 240;
-
-  const WAVE_STEPS = 8;       // 正弦→矩形へ 0..8段階
 
   function ensureAudio() {
     if (ac) return;
     ac = new (window.AudioContext || window.webkitAudioContext)();
 
     master = ac.createGain();
-    master.gain.value = 0.0001; // silent until down
+    master.gain.value = 0.9;
     master.connect(ac.destination);
-
-    osc = ac.createOscillator();
-    osc.frequency.value = BASE_FREQ;
-
-    // 初期は正弦に近い波形
-    osc.setPeriodicWave(makeMorphWave(0));
-    osc.connect(master);
-    osc.start();
 
     elState.textContent = "ready";
   }
 
-  // 対数マッピング（周波数）：base * 2^(x * octaves)
-  function freqFromDx(dx) {
-    const x = clamp(dx / MAX_DX_PX, -1, 1);
-    const oct = x * FREQ_OCT;
+  btnStart.addEventListener("click", async () => {
+    ensureAudio();
+    if (ac && ac.state !== "running") await ac.resume();
+    elState.textContent = "running";
+  });
+
+  // ===== Synthesis mapping =====
+  const BASE_FREQ = 220;     // anchor 기준
+  const OCT_RANGE = 5;       // full-range move -> ±OCT_RANGE
+  const MAX_DX = 260;        // px clamp for dx mapping
+  const MAX_DY = 260;        // px clamp for dy mapping
+  const DB_MIN = -24;        // dy down -> quieter
+  const DB_MAX = 0;
+
+  const TIMBRE_STEPS = 8;    // 0..8 (9段階)
+  const HARMONICS = 64;      // square-ish richness
+  const VOICE_RELEASE = 0.03;
+
+  function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
+  function dbToGain(db) { return Math.pow(10, db / 20); }
+
+  function dxToFreq(dx) {
+    const x = clamp(dx / MAX_DX, -1, 1);
+    const oct = x * OCT_RANGE;
     return BASE_FREQ * Math.pow(2, oct);
   }
 
-  // 対数マッピング（音量）：dB を線形に動かして gain=10^(dB/20)
-  function gainFromDy(dy) {
-    // 上へ行くほど大きく：dy(下+)なので符号反転
-    const y = clamp((-dy) / MAX_DY_PX, -1, 1);
-    const db = y * (GAIN_DB_RANGE / 2);
-    return Math.pow(10, db / 20);
+  function dyToGain(dy) {
+    // up is louder: dy negative => increase
+    const y = clamp((-dy) / MAX_DY, -1, 1);
+    const db = DB_MIN + (y + 1) * 0.5 * (DB_MAX - DB_MIN);
+    return dbToGain(db);
   }
 
-  // 0..1 pressure -> step 0..WAVE_STEPS
-  function stepFromPressure(p) {
-    const cl = clamp(p, 0, 1);
-    return Math.round(cl * WAVE_STEPS);
+  function pressureToStep(p) {
+    const q = clamp(p, 0, 1);
+    return Math.round(q * TIMBRE_STEPS);
   }
 
-  // 正弦(=基本波だけ) と 矩形(=奇数倍音 1/n) を係数で補間した PeriodicWave
-  function makeMorphWave(m) {
-    // m: 0..1 (0=sine, 1=square)
-    const H = 64; // 倍音数（多いほど矩形っぽい）
-    const real = new Float32Array(H + 1);
-    const imag = new Float32Array(H + 1);
+  // PeriodicWave cache (step -> wave)
+  const waveCache = new Map();
+  function getMorphWave(step) {
+    const key = step|0;
+    if (waveCache.has(key)) return waveCache.get(key);
+    const m = key / TIMBRE_STEPS; // 0..1
 
-    // i=1 が基本波。squareは奇数倍音に 1/n。
-    for (let n = 1; n <= H; n++) {
-      if (n === 1) {
-        // sine: 1.0, square: 1.0
-        imag[n] = 1.0;
-      } else if (n % 2 === 1) {
-        // sineは0、squareは 1/n を混ぜる
-        imag[n] = m * (1 / n);
-      } else {
-        imag[n] = 0;
-      }
-      real[n] = 0;
+    const real = new Float32Array(HARMONICS + 1);
+    const imag = new Float32Array(HARMONICS + 1);
+
+    // sine: only fundamental
+    imag[1] = 1.0;
+
+    // add odd harmonics gradually toward square
+    for (let n = 3; n <= HARMONICS; n += 2) {
+      imag[n] = m * (1 / n);
     }
 
-    // 正弦の純度を保つため、基本波も少し補正（低圧でも少し矩形寄りにしたいなら調整）
-    // ここでは基本波は常に1.0、上の奇数倍音が増えていく設計。
+    // mild normalization so loudness doesn't jump too much
+    let s = 0;
+    for (let i = 1; i <= HARMONICS; i++) s += Math.abs(imag[i]);
+    const scale = s > 0 ? (1 / s) : 1;
+    for (let n = 3; n <= HARMONICS; n += 2) imag[n] *= 2.4 * scale;
 
-    // normalize（大きすぎると音量感が跳ねるので軽く抑える）
-    let sum = 0;
-    for (let i = 1; i <= H; i++) sum += Math.abs(imag[i]);
-    const norm = sum > 0 ? 1 / sum : 1;
-    // 基本波を残したいので、奇数倍音だけを弱める方向でスケール
-    for (let i = 3; i <= H; i += 2) imag[i] *= 2.2 * norm;
-
-    return ac.createPeriodicWave(real, imag, { disableNormalization: false });
+    const w = ac.createPeriodicWave(real, imag, { disableNormalization: false });
+    waveCache.set(key, w);
+    return w;
   }
 
-  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+  function getPressureFromEvent(e) {
+    // PointerEvent.pressure: pen works best. touch often constant (0 or 0.5) depending on platform.
+    let p = typeof e.pressure === "number" ? e.pressure : 0;
 
-  // pointer pressure: penなら event.pressure (0..1)
-  // touchはiOSで当てにならないのでスライダーにフォールバック
-  function getPressure(e) {
-    if (e.pointerType === "pen" && typeof e.pressure === "number") {
-      return clamp(e.pressure, 0, 1);
+    // Some browsers give 0 for mouse; make it usable
+    if (e.pointerType === "mouse") p = 0.2;
+
+    // If touch pressure is useless, you can try width/height as a weak proxy (often constant too).
+    if (e.pointerType === "touch" && (!p || p === 0)) {
+      const w = (typeof e.width === "number") ? e.width : 0;
+      const h = (typeof e.height === "number") ? e.height : 0;
+      const area = w * h; // arbitrary
+      // Map area to 0..1 gently (tuned to be non-explosive)
+      p = clamp(area / 900, 0, 1);
     }
-    // 一般touch/mouseは疑似圧力
-    return Number(simPressure.value);
+
+    return clamp(p, 0, 1);
   }
 
-  function setSound(freq, gain, pressure) {
-    if (!ac || !osc || !master) return;
+  // ===== Voices (multi pointer) =====
+  /**
+   * voices: pointerId -> {
+   *   id, type, anchorX, anchorY, x, y,
+   *   osc, gain, anchorEl, headEl
+   * }
+   */
+  const voices = new Map();
 
-    const now = ac.currentTime;
-
-    // freq smooth
-    osc.frequency.setTargetAtTime(freq, now, 0.01);
-
-    // gain smooth（クリップ避けで上限）
-    const g = clamp(gain, 0.0001, 1.0);
-    master.gain.setTargetAtTime(g, now, 0.01);
-
-    // wave step update（段階的）
-    const step = stepFromPressure(pressure);
-    const m = step / WAVE_STEPS;
-    osc.setPeriodicWave(makeMorphWave(m));
-
-    // HUD
-    elFreq.textContent = `${freq.toFixed(1)} Hz`;
-    elGain.textContent = g.toFixed(4);
-    elPress.textContent = pressure.toFixed(2);
-    elStep.textContent = `${step}/${WAVE_STEPS}`;
+  function makeDot(className, color) {
+    const el = document.createElement("div");
+    el.className = "note " + (className || "");
+    el.style.background = color;
+    pad.appendChild(el);
+    return el;
   }
 
-  function startNote(e) {
+  function setDotPos(el, x, y) {
+    el.style.left = x + "px";
+    el.style.top  = y + "px";
+  }
+
+  function colorForType(t) {
+    if (t === "pen") return "rgba(255,180,120,0.95)";
+    if (t === "touch") return "rgba(140,200,255,0.95)";
+    return "rgba(220,220,220,0.9)";
+  }
+
+  function startVoice(e) {
     ensureAudio();
     if (!ac) return;
 
-    // iOS: must resume after gesture
+    // iOS gesture resume
     if (ac.state !== "running") ac.resume();
 
-    isDown = true;
-    startX = e.clientX;
-    startY = e.clientY;
-    pointerType = e.pointerType || "unknown";
-    elPType.textContent = pointerType;
+    const rect = pad.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
 
-    // show simulate slider when not pen
-    simRow.style.display = (pointerType === "pen") ? "none" : "flex";
+    const id = e.pointerId;
+    const type = e.pointerType || "unknown";
 
-    // initial sound
-    const p = getPressure(e);
-    const f = BASE_FREQ;
-    const g = 0.12;
-    elState.textContent = "playing";
-    setSound(f, g, p);
+    // Create voice nodes
+    const osc = ac.createOscillator();
+    const g = ac.createGain();
+
+    g.gain.value = 0.0001; // start silent; will set quickly
+    osc.setPeriodicWave(getMorphWave(0));
+    osc.frequency.value = BASE_FREQ;
+
+    osc.connect(g).connect(master);
+    osc.start();
+
+    // Visuals
+    const col = colorForType(type);
+    const anchorEl = makeDot("anchor", col);
+    const headEl   = makeDot("", col);
+
+    setDotPos(anchorEl, x, y);
+    setDotPos(headEl, x, y);
+
+    voices.set(id, { id, type, anchorX: x, anchorY: y, x, y, osc, gain: g, anchorEl, headEl: [headEl] });
+
+    pad.setPointerCapture?.(id);
+
+    updateVoice(e);
+    updateHud(e);
   }
 
-  function moveNote(e) {
-    if (!isDown) return;
-    const dx = e.clientX - startX;
-    const dy = e.clientY - startY;
+  function updateVoice(e) {
+    const v = voices.get(e.pointerId);
+    if (!v || !ac) return;
 
-    const f = freqFromDx(dx);
-    const g = gainFromDy(dy) * 0.2; // 基準音量を少し抑える
-    const p = getPressure(e);
+    const rect = pad.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
 
-    setSound(f, g, p);
+    v.x = x;
+    v.y = y;
+    //setDotPos(v.headEl, x, y);
+    const type = e.pointerType || "unknown";
+    const col = colorForType(type);
+    const headEl   = makeDot("", col);
+    setDotPos(headEl, x, y);
+    v.headEl.push(headEl);
+
+    const dx = x - v.anchorX;
+    const dy = y - v.anchorY;
+
+    const freq = dxToFreq(dx);
+    const gain = dyToGain(dy);
+
+    const p = getPressureFromEvent(e);
+    const step = pressureToStep(p);
+
+    const now = ac.currentTime;
+    v.osc.frequency.setTargetAtTime(freq, now, 0.01);
+    v.gain.gain.setTargetAtTime(clamp(gain, 0.0001, 1.0), now, 0.015);
+    v.osc.setPeriodicWave(getMorphWave(step));
+
+    // HUD last
+    if (elLast) elLast.textContent =
+      `id=${v.id} type=${v.type} dx=${dx.toFixed(0)} dy=${dy.toFixed(0)} ` +
+      `freq=${freq.toFixed(1)}Hz gain=${gain.toFixed(4)} p=${p.toFixed(2)} step=${step}/${TIMBRE_STEPS}`;
   }
 
-  function endNote() {
-    if (!isDown) return;
-    isDown = false;
-    elState.textContent = "ready";
+  function endVoice(e) {
+    const v = voices.get(e.pointerId);
+    if (!v || !ac) return;
 
-    if (ac && master) {
-      const now = ac.currentTime;
-      master.gain.setTargetAtTime(0.0001, now, 0.02);
-    }
+    const now = ac.currentTime;
+    v.gain.gain.setTargetAtTime(0.0001, now, VOICE_RELEASE);
+
+    // stop oscillator shortly after release
+    v.osc.stop(now + 0.08);
+
+    // cleanup DOM a bit later
+    setTimeout(() => {
+      v.anchorEl.remove();
+      v.headEl.forEach(i => i.remove());
+    }, 120);
+
+    voices.delete(e.pointerId);
+    updateHud(e);
   }
 
-  // ===== Events =====
-  btnStart.addEventListener("click", () => ensureAudio());
+  function updateHud(e) {
+    if (elCount) elCount.textContent = String(voices.size);
+    if (ac) elState.textContent = ac.state;
+  }
 
+  // ===== Pointer Events (pen + touch unified) =====
   pad.addEventListener("pointerdown", (e) => {
     e.preventDefault();
-    pad.setPointerCapture?.(e.pointerId);
-    startNote(e);
-  });
+    startVoice(e);
+  }, { passive: false });
 
   pad.addEventListener("pointermove", (e) => {
+    if (!voices.has(e.pointerId)) return;
     e.preventDefault();
-    moveNote(e);
-  });
+    updateVoice(e);
+  }, { passive: false });
 
   pad.addEventListener("pointerup", (e) => {
     e.preventDefault();
-    endNote();
-  });
+    endVoice(e);
+  }, { passive: false });
 
   pad.addEventListener("pointercancel", (e) => {
     e.preventDefault();
-    endNote();
+    endVoice(e);
+  }, { passive: false });
+
+  // If the browser fires lostpointercapture, ensure cleanup
+  pad.addEventListener("lostpointercapture", (e) => {
+    if (voices.has(e.pointerId)) endVoice(e);
   });
 
-  // If simulate pressure changes during touch, reflect next move
-  simPressure.addEventListener("input", () => {
-    if (!isDown) return;
-    // fake event-like update
-    const f = Number(elFreq.textContent.split(" ")[0]) || BASE_FREQ;
-    const g = Number(elGain.textContent) || 0.1;
-    const p = Number(simPressure.value);
-    setSound(f, g, p);
-  });
 })();
 </script>
 </body>
